@@ -254,6 +254,10 @@ public abstract class JSweetConfig {
 	 */
 	public static final String ANNOTATION_ERASED = JSweetConfig.LANG_PACKAGE + ".Erased";
 	/**
+	 * Fully-qualified name for the JSweet <code>@Async</code> annotation (see JSweet core API).
+	 */
+	public static final String ANNOTATION_ASYNC = JSweetConfig.LANG_PACKAGE + ".Async";
+	/**
 	 * Fully-qualified name for the JSweet <code>@SyntacticIterable</code> annotation (see JSweet core API).
 	 */
 	public static final String ANNOTATION_SYNTACTIC_ITERABLE = JSweetConfig.LANG_PACKAGE + ".SyntacticIterable";
@@ -309,6 +313,10 @@ public abstract class JSweetConfig {
 	 * Fully-qualified name for the JSweet <code>@SNoDebug</code> annotation (see JSweet core API).
 	 */
 	public static final String ANNOTATION_NO_DEBUG = JSweetConfig.LANG_PACKAGE + ".NoDebug";
+	/**
+	 * Fully-qualified name for the JSweet <code>@WrapParameters</code> annotation (see JSweet core API).
+	 */
+	public static final String ANNOTATION_WRAP_PARAMETERS = JSweetConfig.LANG_PACKAGE + ".WrapParameters";
 	/**
 	 * Fully-qualified name for the built-in Java {@link FunctionalInterface} annotation.
 	 */

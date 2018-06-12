@@ -1,12 +1,18 @@
 package org.jsweet.test.transpiler;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 
+import org.jsweet.transpiler.JSweetContext;
+import org.jsweet.transpiler.JSweetFactory;
 import org.jsweet.transpiler.ModuleKind;
+import org.jsweet.transpiler.extension.PrinterAdapter;
+import org.jsweet.transpiler.extension.RemoveJavaDependenciesAdapter;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import source.nativestructures.ArraysSort;
 import source.nativestructures.Collections;
 import source.nativestructures.Dates;
 import source.nativestructures.Exceptions;
@@ -32,6 +38,20 @@ import source.nativestructures.WeakReferences;
 public class NativeStructuresTests extends AbstractTest {
 
 	@Test
+	public void testArraysSort() {
+		createTranspiler(new JSweetFactory() {
+			@Override
+			public PrinterAdapter createAdapter (JSweetContext context) {
+				return new RemoveJavaDependenciesAdapter(super.createAdapter(context));
+			}
+		});
+		eval((logHandler, r) -> {
+			logHandler.assertNoProblems();
+		}, getSourceFile(ArraysSort.class));
+		createTranspiler(new JSweetFactory());
+	}
+	
+	@Test
 	public void testCollections() {
 		eval((logHandler, result) -> {
 			Assert.assertEquals("There should be no errors", 0, logHandler.reportedProblems.size());
@@ -40,7 +60,8 @@ public class NativeStructuresTests extends AbstractTest {
 			// queues
 					+ "false,[c, a, b],c,[a, b],b,[a],a,null,true,null,"
 			// removeAll, retainAll, containsAll, disjoint
-					+ "[a, b, c],[d, e, f],false,true,false,true", result.get("trace"));
+					+ "[a, b, c],[d, e, f],false,true,false,true," //
+					+ "[nyan, nyan, nyan, nyan, nyan, nyan, nyan]", result.get("trace"));
 		}, getSourceFile(Collections.class));
 	}
 
@@ -121,8 +142,9 @@ public class NativeStructuresTests extends AbstractTest {
 	@Test
 	public void testSystem() {
 		eval((logHandler, result) -> {
-			Assert.assertEquals("There should be no errors", 0, logHandler.reportedProblems.size());
+			assertEquals("There should be no errors", 0, logHandler.reportedProblems.size());
 			assertEquals("true,true", result.get("trace"));
+			assertTrue(result.get("nanoTime"));
 		}, getSourceFile(NativeSystem.class));
 	}
 

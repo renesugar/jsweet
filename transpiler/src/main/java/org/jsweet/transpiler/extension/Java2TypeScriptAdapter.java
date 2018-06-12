@@ -221,6 +221,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 		context.getLangTypeMappings().put(Byte.class.getName(), "Number");
 		context.getLangTypeMappings().put(Character.class.getName(), "String");
 		context.getLangTypeMappings().put(Math.class.getName(), "Math");
+		context.getLangTypeMappings().put(StrictMath.class.getName(), "Math");
 		context.getLangTypeMappings().put(Exception.class.getName(), "Error");
 		context.getLangTypeMappings().put(Throwable.class.getName(), "Error");
 		context.getLangTypeMappings().put(Error.class.getName(), "Error");
@@ -489,6 +490,20 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 					print("(<any>");
 					printCastMethodInvocation(invocationElement);
 					print(")");
+					return true;
+
+				case "async":
+					print("async ");
+					print(invocationElement.getArgument(0));
+					return true;
+
+				case "await":
+					print("await ");
+					printCastMethodInvocation(invocationElement);
+					return true;
+					
+				case "asyncReturn":
+					printCastMethodInvocation(invocationElement);
 					return true;
 
 				case "union":
@@ -1035,6 +1050,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 					return true;
 				}
 				break;
+			case "java.lang.StrictMath":
 			case "java.lang.Math":
 				switch (targetMethodName) {
 				case "cbrt":
@@ -1265,11 +1281,19 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 	}
 
 	protected final void printCastMethodInvocation(InvocationElement invocation) {
-		if (getPrinter().getParent() instanceof JCMethodInvocation) {
+		boolean needsParens =getPrinter().getParent() instanceof JCMethodInvocation;
+		if (needsParens) {
+			// async needs no parens to work
+			JCMethodInvocation parentInvocation = (JCMethodInvocation)getPrinter().getParent();
+			if (parentInvocation.meth instanceof JCIdent) {
+				needsParens = !((JCIdent)parentInvocation.meth).getName().toString().equals("async");
+			}
+		}
+		if (needsParens) {
 			print("(");
 		}
 		print(invocation.getArgument(0));
-		if (getPrinter().getParent() instanceof JCMethodInvocation) {
+		if (needsParens) {
 			print(")");
 		}
 	}
