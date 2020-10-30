@@ -41,6 +41,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -85,6 +86,8 @@ import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.gson.Gson;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.PackageSymbol;
+import com.sun.tools.javac.comp.AttrContext;
+import com.sun.tools.javac.comp.Env;
 import com.sun.tools.javac.file.JavacFileManager;
 import com.sun.tools.javac.main.JavaCompiler;
 import com.sun.tools.javac.main.Option;
@@ -225,6 +228,8 @@ public class JSweetTranspiler implements JSweetOptions {
 	private boolean debugMode = false;
 	private boolean skipTypeScriptChecks = false;
 	private boolean disableSingleFloatPrecision = false;
+	private boolean ignoreCandiesTypeScriptDefinitions = false;
+
 	private ArrayList<String> adapters = new ArrayList<>();
 	private File configurationFile;
 
@@ -610,7 +615,6 @@ public class JSweetTranspiler implements JSweetOptions {
 				}
 			}
 		}
-
 		if (encoding != null) {
 			options.put(Option.ENCODING, encoding);
 		}
@@ -686,9 +690,9 @@ public class JSweetTranspiler implements JSweetOptions {
 	public EvaluationResult eval(String engineName, TranspilationHandler transpilationHandler,
 			SourceFile... sourceFiles) throws Exception {
 		logger.info("[" + engineName + " engine] eval files: " + Arrays.asList(sourceFiles));
-		
+
 		EvalOptions options = new EvalOptions(isUsingModules(), workingDir);
-		
+
 		if ("Java".equals(engineName)) {
 
 			JavaEval evaluator = new JavaEval(this, options);
@@ -702,7 +706,7 @@ public class JSweetTranspiler implements JSweetOptions {
 				}
 
 			}
-			
+
 			Collection<File> jsFiles;
 			if (context.useModules) {
 				File f = null;
@@ -719,48 +723,44 @@ public class JSweetTranspiler implements JSweetOptions {
 				}
 				jsFiles = asList(f);
 			} else {
-				jsFiles = Stream.of(sourceFiles).map(sourceFile -> sourceFile.getJsFile()).collect(toList());	
+				jsFiles = Stream.of(sourceFiles).map(sourceFile -> sourceFile.getJsFile()).collect(toList());
 			}
-			
+
 			JavaScriptEval evaluator = new JavaScriptEval(options, JavaScriptRuntime.NodeJs);
 			return evaluator.performEval(jsFiles);
 		}
 	}
 
-	protected List<JCCompilationUnit> setupCompiler(java.util.List<File> files,
+	public List<JCCompilationUnit> setupCompiler(java.util.List<File> files,
 			ErrorCountTranspilationHandler transpilationHandler) throws IOException {
 		initJavac(transpilationHandler);
 		List<JavaFileObject> fileObjects = toJavaFileObjects(fileManager, files);
 
-		try {
-			compiler.compile(fileObjects);
-		} catch (Throwable e) {
-			throw new RuntimeException(e);
-		}
-		
 		logger.info("ENTER phase: " + fileObjects);
 		transpilationHandler.setDisabled(isIgnoreJavaErrors());
+
 		List<JCCompilationUnit> compilationUnits = compiler.enterTrees(compiler.parseFiles(fileObjects));
 		if (transpilationHandler.getErrorCount() > 0) {
 			logger.warn("errors during parse tree");
 			return null;
 		}
 		logger.info("ATTRIBUTE phase");
-		compiler.attribute(compiler.todo);
-		
-		transpilationHandler.setDisabled(false);
+		Queue<Env<AttrContext>> todo = compiler.attribute(compiler.todo);
+
 		logger.info("FLOW phase");
-		compiler.flow(compiler.todo);
-		
-		compiler.processAnnotations(compilationUnits);
-		
-		logger.info("DESUGAR phase");
-		compiler.desugar(compiler.todo);
-		
-		
+		todo = compiler.flow(todo);
+
+		// logger.info("DESUGAR phase");
+		// compiler.generate(compiler.desugar(todo));
+
+		logger.info("REPORT DEFERRED phase");
+		compiler.reportDeferredDiagnostics();
+
+		// logger.info("CLOSE phase");
+		// compiler.close(true);
+
+		transpilationHandler.setDisabled(false);
 		context.compilationUnits = compilationUnits.toArray(new JCCompilationUnit[compilationUnits.size()]);
-//		logger.info("DESUGAR phase");
-//		compiler.desugar(compiler.todo);
 
 		if (transpilationHandler.getErrorCount() > 0) {
 			return null;
@@ -823,7 +823,9 @@ public class JSweetTranspiler implements JSweetOptions {
 		}
 		candiesProcessor.processCandies(transpilationHandler);
 
-		addTsDefDir(candiesProcessor.getCandiesTsdefsDir());
+		if (!isIgnoreCandiesTypeScriptDefinitions()) {
+			addTsDefDir(candiesProcessor.getCandiesTsdefsDir());
+		}
 
 		ErrorCountTranspilationHandler errorHandler = new ErrorCountTranspilationHandler(transpilationHandler);
 		Collection<SourceFile> jsweetSources = asList(files).stream() //
@@ -1767,7 +1769,11 @@ public class JSweetTranspiler implements JSweetOptions {
 	}
 
 	public void setVerbose(boolean verbose) {
-		LogManager.getLogger("org.jsweet").setLevel(Level.ALL);
+		Level level = Level.WARN;
+		if (verbose) {
+			level = Level.ALL;
+		}
+		LogManager.getLogger("org.jsweet").setLevel(level);
 	}
 
 	@Override
@@ -1800,5 +1806,13 @@ public class JSweetTranspiler implements JSweetOptions {
 
 	public String getClassPath() {
 		return classPath;
+	}
+
+	public boolean isIgnoreCandiesTypeScriptDefinitions() {
+		return ignoreCandiesTypeScriptDefinitions;
+	}
+
+	public void setIgnoreCandiesTypeScriptDefinitions(boolean ignoreCandiesTypeScriptDefinitions) {
+		this.ignoreCandiesTypeScriptDefinitions = ignoreCandiesTypeScriptDefinitions;
 	}
 }

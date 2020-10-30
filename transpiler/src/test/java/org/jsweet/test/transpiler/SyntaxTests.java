@@ -22,37 +22,22 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.FileUtils;
-import org.jsweet.transpiler.JSweetProblem;
-import org.jsweet.transpiler.ModuleKind;
-import org.jsweet.transpiler.SourceFile;
+import org.jsweet.test.transpiler.util.TranspilerTestRunner;
+import org.jsweet.transpiler.*;
+import org.jsweet.transpiler.extension.PrinterAdapter;
+import org.jsweet.transpiler.model.ExtendedElement;
+import org.jsweet.transpiler.model.MethodInvocationElement;
 import org.jsweet.transpiler.util.EvaluationResult;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import source.syntax.AnnotationQualifiedNames;
-import source.syntax.Casts;
-import source.syntax.DocComments;
-import source.syntax.FinalVariables;
-import source.syntax.FinalVariablesRuntime;
-import source.syntax.GlobalsCastMethod;
-import source.syntax.GlobalsInvocation;
-import source.syntax.IndexedAccessInStaticScope;
-import source.syntax.Keywords;
-import source.syntax.Labels;
-import source.syntax.LambdaExpression;
-import source.syntax.LambdasWithInterfaces;
-import source.syntax.Literals;
-import source.syntax.Looping;
-import source.syntax.QualifiedNames;
-import source.syntax.References;
-import source.syntax.SpecialFunctions;
-import source.syntax.StatementsWithNoBlocks;
-import source.syntax.SuperInvocation;
-import source.syntax.ValidIndexedAccesses;
+import source.syntax.*;
 
 public class SyntaxTests extends AbstractTest {
 
@@ -140,7 +125,8 @@ public class SyntaxTests extends AbstractTest {
 	public void testFinalVariablesRuntime() {
 		try {
 			TestTranspilationHandler logHandler = new TestTranspilationHandler();
-			EvaluationResult r = transpiler.eval("Java", logHandler, getSourceFile(FinalVariablesRuntime.class));
+			EvaluationResult r = transpilerTest().getTranspiler().eval("Java", logHandler,
+					getSourceFile(FinalVariablesRuntime.class));
 			logHandler.assertNoProblems();
 			Assert.assertEquals("Wrong behavior output trace", "11223344", r.get("out").toString());
 		} catch (Exception e) {
@@ -205,7 +191,7 @@ public class SyntaxTests extends AbstractTest {
 				assertTrue(generatedCode.contains("Main overload."));
 				assertTrue(generatedCode.contains("@param {*} i is an interface"));
 				assertTrue(generatedCode.contains("@param {number[]} aList"));
-				if (transpiler.getModuleKind() == ModuleKind.commonjs) {
+				if (transpilerTest().getTranspiler().getModuleKind() == ModuleKind.commonjs) {
 					assertTrue(Pattern.compile("\\* @property \\{E\\} XX_B\\s*\\* Test enum").matcher(generatedCode)
 							.find());
 					assertTrue(generatedCode.contains("* @property {E} XX_C"));
@@ -266,6 +252,11 @@ public class SyntaxTests extends AbstractTest {
 		transpile((logHandler) -> {
 			logHandler.assertNoProblems();
 		}, getSourceFile(LambdaExpression.class));
+	}
+
+	@Test
+	public void testMemberReferences() {
+		transpile(TestTranspilationHandler::assertNoProblems, getSourceFile(MemberReferences.class));
 	}
 
 }

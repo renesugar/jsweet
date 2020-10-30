@@ -17,6 +17,7 @@
 package org.jsweet.test.transpiler;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.jsweet.transpiler.ModuleKind;
@@ -31,6 +32,7 @@ import source.calculus.MathApi;
 import source.calculus.Null;
 import source.calculus.Numbers;
 import source.calculus.Operators;
+import source.calculus.Strings;
 
 public class CalculusTests extends AbstractTest {
 
@@ -38,7 +40,8 @@ public class CalculusTests extends AbstractTest {
 	public void testIntegers() {
 		try {
 			TestTranspilationHandler logHandler = new TestTranspilationHandler();
-			EvaluationResult r = transpiler.eval("Java", logHandler, getSourceFile(Integers.class));
+			EvaluationResult r = transpilerTest().getTranspiler().eval("Java", logHandler,
+					getSourceFile(Integers.class));
 			logHandler.assertNoProblems();
 			Assert.assertEquals("3", r.get("i").toString());
 			Assert.assertEquals((Integer) 1, r.get("i1"));
@@ -48,6 +51,7 @@ public class CalculusTests extends AbstractTest {
 			Assert.assertEquals((Double) 7.5, r.get("f3"));
 			Assert.assertEquals((Integer) 7, r.get("i3"));
 			Assert.assertEquals((Integer) 7, r.get("i4"));
+			Assert.assertEquals((Integer) 1, r.get("j"));
 		} catch (Exception e) {
 			e.printStackTrace();
 			fail("Exception occured while running test");
@@ -62,6 +66,7 @@ public class CalculusTests extends AbstractTest {
 			Assert.assertEquals((Double) 7.5, r.get("f3"));
 			Assert.assertEquals((Integer) 7, r.get("i3"));
 			Assert.assertEquals((Integer) 7, r.get("i4"));
+			Assert.assertEquals((Integer) 1, r.get("j"));
 		}, getSourceFile(Integers.class));
 	}
 
@@ -79,7 +84,7 @@ public class CalculusTests extends AbstractTest {
 	public void testMathApi() {
 		eval(ModuleKind.none, (logHandler, r) -> {
 			logHandler.assertNoProblems();
-			
+
 			Assert.assertEquals(Math.E, (double) r.get("E"), 0.00001);
 			Assert.assertEquals(Math.PI, (double) r.get("PI"), 0.00001);
 			Assert.assertEquals(Math.abs(-123), (int) r.get("abs_123"), 0.00001);
@@ -104,7 +109,7 @@ public class CalculusTests extends AbstractTest {
 			Assert.assertEquals(Math.cbrt(2), (double) r.get("3"), 0.00001);
 			Assert.assertEquals(Math.cbrt(2), (double) r.get("4"), 0.00001);
 			Assert.assertEquals(Math.cbrt(2), (double) r.get("4"), 0.00001);
-			
+
 			Assert.assertTrue(Math.ulp(956.294) == 1.1368683772161603E-13);
 			Assert.assertTrue(Math.ulp(123.1) == 1.4210854715202004E-14);
 		}, getSourceFile(MathApi.class));
@@ -114,16 +119,16 @@ public class CalculusTests extends AbstractTest {
 	public void testOperators() {
 		eval(ModuleKind.none, (logHandler, r) -> {
 			logHandler.assertNoProblems();
-			
+
 			assertEquals(1L, r.<Number>get("bitwise_or_assign").longValue());
 			assertEquals(2L, r.<Number>get("bitwise_leftshift").longValue());
 			assertEquals(4L, r.<Number>get("bitwise_leftshift_assign").longValue());
 			System.out.println("last shift: " + r.get("bitwise_leftshift_assign"));
-			
+
 			assertEquals(12L, r.<Number>get("bitwise_leftshift_char").longValue());
-			
+
 			assertEquals(15L, r.<Number>get("bitwise_or_assign_char").longValue());
-			
+
 			assertEquals(3L, r.<Number>get("bitwise_and_assign_char").longValue());
 			assertEquals(24L, r.<Number>get("bitwise_lshift_assign_char").longValue());
 			assertEquals(3L, r.<Number>get("bitwise_rshift_assign_char").longValue());
@@ -133,10 +138,10 @@ public class CalculusTests extends AbstractTest {
 			assertEquals(-6L, r.<Number>get("bitwise_multiply_assign_char").longValue());
 			assertEquals(-3L, r.<Number>get("bitwise_plus_assign_char").longValue());
 			assertEquals(-2L, r.<Number>get("bitwise_xor_assign_char").longValue());
-			
+
 			assertEquals("A", r.get("bitwise_add_to_char"));
 			assertEquals("B", r.get("bitwise_multiply_assign_char_to_char"));
-			
+
 		}, getSourceFile(Operators.class));
 	}
 
@@ -159,8 +164,20 @@ public class CalculusTests extends AbstractTest {
 	public void testNumbers() {
 		eval(ModuleKind.none, (logHandler, r) -> {
 			logHandler.assertNoProblems();
-			Assert.assertTrue(r.get("NaN_test"));
+			assertTrue(r.get("NaN_test"));
+			assertEquals(2.5, (double) r.get("Numbers_f3"), 0.00001);
 		}, getSourceFile(Numbers.class));
 	}
 
+	@Test
+	public void testStrings() {
+		eval(ModuleKind.none, (logHandler, r) -> {
+			logHandler.assertNoProblems();
+			Assert.assertEquals("a", r.get("str_plus_char_casted_int").toString());
+			Assert.assertEquals("97", r.get("str_plus_int").toString());
+			Assert.assertEquals("d", r.get("str_plus_char").toString());
+			Assert.assertEquals("a", r.get("str_plus_equal_casted_int").toString());
+			Assert.assertEquals("97", r.get("str_plus_equal_int").toString());
+		}, getSourceFile(Strings.class));
+	}
 }

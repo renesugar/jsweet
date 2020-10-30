@@ -26,6 +26,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringReader;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.text.Collator;
@@ -116,6 +117,7 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 		extTypesMapping.put(List.class.getName(), "Array");
 		extTypesMapping.put(AbstractList.class.getName(), "Array");
 		extTypesMapping.put(ArrayList.class.getName(), "Array");
+		extTypesMapping.put(Iterable.class.getName(), "Array");
 		extTypesMapping.put(LinkedList.class.getName(), "Array");
 		extTypesMapping.put(Collection.class.getName(), "Array");
 		extTypesMapping.put(Set.class.getName(), "Array");
@@ -142,8 +144,8 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 		extTypesMapping.put(RuntimeException.class.getName(), "Error");
 		extTypesMapping.put(Throwable.class.getName(), "Error");
 		extTypesMapping.put(Error.class.getName(), "Error");
-		extTypesMapping.put(StringBuffer.class.getName(), "{ str: string }");
-		extTypesMapping.put(StringBuilder.class.getName(), "{ str: string }");
+		extTypesMapping.put(StringBuffer.class.getName(), "{ str: string, toString: Function }");
+		extTypesMapping.put(StringBuilder.class.getName(), "{ str: string, toString: Function }");
 		extTypesMapping.put(Collator.class.getName(), "any");
 		extTypesMapping.put(Calendar.class.getName(), "Date");
 		extTypesMapping.put(GregorianCalendar.class.getName(), "Date");
@@ -374,7 +376,7 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 				case "skip":
 					printMacroName(targetMethodName);
 					print(invocation.getTargetExpression(), delegate).print(".cursor+=")
-					.print(invocation.getArgument(0));
+							.print(invocation.getArgument(0));
 					return true;
 				case "reset":
 					printMacroName(targetMethodName);
@@ -390,8 +392,13 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 				switch (targetMethodName) {
 				case "get":
 					printMacroName(targetMethodName);
+
+					print("((tlObj: any) => {" //
+							+ "    if (tlObj.___value) { return tlObj.___value } " //
+							+ "    else { return tlObj.___value = tlObj.initialValue() } " //
+							+ "  })(");
 					print(invocation.getTargetExpression());
-					print(".initialValue()");
+					print(")");
 					return true;
 				}
 				break;
@@ -803,6 +810,16 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 			printMacroName(targetMethodName);
 			print(invocation.getTargetExpression(), delegate).print(".str");
 			return true;
+		case "lastIndexOf":
+			printMacroName(targetMethodName);
+			print(invocation.getTargetExpression(), delegate).print(".str.lastIndexOf(").print(invocation.getArgument(0))
+					.print(")");
+			return true;
+		case "substring":
+			printMacroName(targetMethodName);
+			print(invocation.getTargetExpression(), delegate).print(".str.substring(").printArgList(invocation.getArguments())
+					.print(")");
+			return true;
 		}
 		return false;
 	}
@@ -981,9 +998,14 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 				return true;
 			case "remove":
 				printMacroName(targetMethodName);
+				print("(map => { let deleted = ");
+				print(invocation.getTargetExpression(), delegate).print("[").print(invocation.getArgument(0))
+						.print("];");
 				print("delete ");
 				print(invocation.getTargetExpression(), delegate).print("[").print(invocation.getArgument(0))
-						.print("]");
+						.print("];");
+				print("return deleted;})").print("(");
+				print(invocation.getTargetExpression(), delegate).print(")");
 				return true;
 			case "clear":
 				printMacroName(targetMethodName);
@@ -1131,13 +1153,20 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 			print(invocation.getTargetExpression(), delegate).print(")");
 			return true;
 		case "remove":
-		case "removeElement":
+		case "removeFirst": // in Deque
+		case "removeElement": // in Vector: functionally equivalent to List.remove(int idx)
 			printMacroName(targetMethodName);
-			if (Util.isNumber(invocation.getArgument(0).getType())
+			/* in Queue: interface contains a no-arg method remove()
+			 * which is functionally identical to Deque.removeFirst()
+			 */
+			if (invocation.getArgumentCount() == 0) {
+				print(invocation.getTargetExpression(), delegate)
+					.print(".splice(0, 1)[0]");
+			} else if (Util.isNumber(invocation.getArgument(0).getType())
 					&& types().isSubtype(types().erasure(invocation.getTargetExpression().getType()),
 							types().erasure(util().getType(List.class)))) {
 				print(invocation.getTargetExpression(), delegate).print(".splice(")
-						.printArgList(invocation.getArguments()).print(", 1)");
+						.printArgList(invocation.getArguments()).print(", 1)[0]");
 			} else {
 				print("(a => { let index = a.indexOf(").print(invocation.getArgument(0))
 						.print("); if(index>=0) { a.splice(index").print(invocation.getArgumentCount() == 1 ? "" : ", ")
@@ -1385,8 +1414,9 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 	@Override
 	public boolean substituteVariableAccess(VariableAccessElement variableAccess) {
 		String targetClassName = variableAccess.getTargetElement().toString();
+		String variableName = variableAccess.getVariableName();
 		if (variableAccess.getVariable().getModifiers().contains(Modifier.STATIC) && isMappedType(targetClassName)
-				&& targetClassName.startsWith("java.lang.") && !"class".equals(variableAccess.getVariableName())) {
+				&& targetClassName.startsWith("java.lang.") && !"class".equals(variableName)) {
 
 			switch (targetClassName) {
 			case "java.lang.Float":
@@ -1395,12 +1425,19 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 			case "java.lang.Byte":
 			case "java.lang.Long":
 			case "java.lang.Short":
-				switch (variableAccess.getVariableName()) {
+				switch (variableName) {
 				case "MIN_VALUE":
 				case "MAX_VALUE":
 				case "POSITIVE_INFINITY":
 				case "NEGATIVE_INFINITY":
-					print("Number." + variableAccess.getVariableName());
+
+					try {
+						Field constantField = Class.forName(targetClassName).getDeclaredField(variableName);
+						print("" + constantField.get(null));
+					} catch (Exception e) {
+						logger.warn("unable to read Java constant value " + targetClassName + "." + variableName, e);
+						print("Number." + variableName);
+					}
 					return true;
 				case "NaN":
 					print("NaN");
@@ -1408,7 +1445,7 @@ public class RemoveJavaDependenciesAdapter extends Java2TypeScriptAdapter {
 				}
 				break;
 			case "java.lang.Boolean":
-				switch (variableAccess.getVariableName()) {
+				switch (variableName) {
 				case "TRUE":
 					print("true");
 					return true;

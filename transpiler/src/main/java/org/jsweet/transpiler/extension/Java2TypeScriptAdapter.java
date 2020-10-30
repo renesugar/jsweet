@@ -1,12 +1,12 @@
-/* 
+/*
  * JSweet transpiler - http://www.jsweet.org
  * Copyright (C) 2015 CINCHEO SAS <renaud.pawlak@cincheo.fr>
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 3 of the License, or
  * (at your option) any later version.
- *  
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
@@ -36,9 +36,12 @@ import static org.jsweet.JSweetConfig.UTIL_CLASSNAME;
 import static org.jsweet.JSweetConfig.UTIL_PACKAGE;
 import static org.jsweet.JSweetConfig.isJSweetPath;
 
+import java.net.URL;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.DoubleConsumer;
@@ -68,6 +71,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 
 import org.apache.commons.lang3.StringUtils;
@@ -101,6 +105,7 @@ import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Type.MethodType;
+import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCEnhancedForLoop;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
@@ -115,7 +120,7 @@ import com.sun.tools.javac.tree.JCTree.Tag;
 /**
  * This is an adapter for the TypeScript code generator. It overrides the
  * default adapter's behavior.
- * 
+ *
  * @author Renaud Pawlak
  */
 public class Java2TypeScriptAdapter extends PrinterAdapter {
@@ -128,7 +133,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 
 	/**
 	 * Creates a root adapter (with no parent).
-	 * 
+	 *
 	 * @param context
 	 *            the transpilation context
 	 */
@@ -138,9 +143,9 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 	}
 
 	/**
-	 * Creates a new adapter that will try delegate to the given parent adapter
-	 * when not implementing its own behavior.
-	 * 
+	 * Creates a new adapter that will try delegate to the given parent adapter when
+	 * not implementing its own behavior.
+	 *
 	 * @param parentAdapter
 	 *            cannot be null: if no parent you must use the
 	 *            {@link #AbstractPrinterAdapter(JSweetContext)} constructor
@@ -153,6 +158,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 	private void init() {
 		addTypeMapping(Object.class.getName(), "any");
 		addTypeMapping(Runnable.class.getName(), "() => void");
+		addTypeMapping(Callable.class.getName(), "() => any");
 
 		addTypeMapping(DoubleConsumer.class.getName(), "(number) => void");
 		addTypeMapping(DoublePredicate.class.getName(), "(number) => boolean");
@@ -192,6 +198,9 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 		addTypeMapping(Character.class.getName(), "string");
 		addTypeMapping(CharSequence.class.getName(), "any");
 		addTypeMapping(Void.class.getName(), "void");
+
+		addTypeMapping(URL.class.getName(), "URL");
+
 		addTypeMapping("double", "number");
 		addTypeMapping("int", "number");
 		addTypeMapping("float", "number");
@@ -358,7 +367,8 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 		String targetMethodName = invocationElement.getMethodName();
 		String targetClassName = targetType.toString();
 
-		if ("println".equals(targetMethodName)) {
+		if ("println".equals(targetMethodName) || "printf".equals(targetMethodName)
+				|| "print".equals(targetMethodName)) {
 			if (invocationElement.getTargetExpression() != null) {
 				if ("System.out".equals(invocationElement.getTargetExpression().toString())) {
 					PrinterAdapter print = print("console.info(");
@@ -501,7 +511,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 					print("await ");
 					printCastMethodInvocation(invocationElement);
 					return true;
-					
+
 				case "asyncReturn":
 					printCastMethodInvocation(invocationElement);
 					return true;
@@ -786,6 +796,7 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 		}
 		if (invocationElement.getTargetExpression() != null && targetClassName != null
 				&& (targetClassName.startsWith(UTIL_PACKAGE + ".function.")
+						|| targetClassName.equals(Callable.class.getName())
 						|| targetClassName.startsWith(Function.class.getPackage().getName()))) {
 			if (!TypeChecker.jdkAllowed && targetClassName.startsWith(Function.class.getPackage().getName())
 					&& TypeChecker.FORBIDDEN_JDK_FUNCTIONAL_METHODS.contains(targetMethodName)) {
@@ -1181,6 +1192,16 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 								.print(invocationElement.getArgument(0));
 						print("))");
 						return true;
+					case "compareTo":
+						if (invocationElement.getArgumentCount() == 1
+								&& invocationElement.getTargetExpression() != null) {
+							printMacroName(targetMethodName);
+							print("(<any>((o1: any, o2: any) => { if(o1 && o1.compareTo) { return o1.compareTo(o2); } else { return o1 < o2 ? -1 : o2 < o1 ? 1 : 0; } })(");
+							printTarget(invocationElement.getTargetExpression()).print(",")
+									.print(invocationElement.getArgument(0));
+							print("))");
+						}
+						return true;
 					}
 				}
 			}
@@ -1194,21 +1215,28 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 			print(".constructor)");
 			return true;
 		case "hashCode":
-			printMacroName(targetMethodName);
-			print("(<any>((o: any) => { if(o.hashCode) { return o.hashCode(); } else { return o.toString(); } })(");
-			printTarget(invocationElement.getTargetExpression());
-			print("))");
+			if (invocationElement.getArgumentCount() > 0) {
+				printTarget(invocationElement.getTargetExpression()).print(".hashCode(");
+				printArgList(invocationElement.getArguments());
+				print(")");
+			} else {
+				printMacroName(targetMethodName);
+				print("(<any>((o: any) => { if(o.hashCode) { return o.hashCode(); } else { "
+						+ "return o.toString().split('').reduce((prevHash, currVal) => (((prevHash << 5) - prevHash) + currVal.charCodeAt(0))|0, 0); }})(");
+				printTarget(invocationElement.getTargetExpression());
+				print("))");
+			}
 			return true;
 		case "equals":
-			if (invocationElement.getTargetExpression() != null) {
+			if (invocationElement.getTargetExpression() != null && invocationElement.getArgumentCount() == 1) {
 				MethodSymbol methSym = Util.findMethodDeclarationInType(context.types,
 						(TypeSymbol) invocationElement.getTargetExpression().getTypeAsElement(), targetMethodName,
 						(MethodType) invocationElement.getMethod().asType());
 				if (methSym != null
 						&& (Object.class.getName().equals(methSym.getEnclosingElement().toString())
 								|| methSym.getEnclosingElement().isInterface())
-						|| invocationElement.getTargetExpression().getTypeAsElement()
-								.getKind() == ElementKind.INTERFACE) {
+						|| invocationElement.getTargetExpression().getTypeAsElement().getKind() == ElementKind.INTERFACE
+						|| invocationElement.getTargetExpression().getType().getKind() == TypeKind.TYPEVAR) {
 					printMacroName(targetMethodName);
 					print("(<any>((o1: any, o2: any) => { if(o1 && o1.equals) { return o1.equals(o2); } else { return o1 === o2; } })(");
 					printTarget(invocationElement.getTargetExpression()).print(",")
@@ -1281,12 +1309,12 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 	}
 
 	protected final void printCastMethodInvocation(InvocationElement invocation) {
-		boolean needsParens =getPrinter().getParent() instanceof JCMethodInvocation;
+		boolean needsParens = getPrinter().getParent() instanceof JCMethodInvocation;
 		if (needsParens) {
 			// async needs no parens to work
-			JCMethodInvocation parentInvocation = (JCMethodInvocation)getPrinter().getParent();
+			JCMethodInvocation parentInvocation = (JCMethodInvocation) getPrinter().getParent();
 			if (parentInvocation.meth instanceof JCIdent) {
-				needsParens = !((JCIdent)parentInvocation.meth).getName().toString().equals("async");
+				needsParens = !((JCIdent) parentInvocation.meth).getName().toString().equals("async");
 			}
 		}
 		if (needsParens) {
@@ -1296,6 +1324,46 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 		if (needsParens) {
 			print(")");
 		}
+	}
+
+	/**
+	 * @param enclosingElement
+	 *            is required for functional (ie dynamic) type mappings
+	 */
+	public boolean substituteAndPrintType(ExtendedElement enclosingElement, TypeElement type) {
+		String typeFullName = type.toString();
+		boolean completeRawTypes = true;
+
+		String mappedType = context.getTypeMappingTarget(typeFullName);
+		if (mappedType != null) {
+			if (mappedType.endsWith("<>")) {
+				print(mappedType.substring(0, mappedType.length() - 2));
+			} else {
+				print(mappedType);
+
+				if (completeRawTypes && !type.getTypeParameters().isEmpty()
+						&& !context.getTypeMappingTarget(typeFullName).equals("any")) {
+					getPrinter().printAnyTypeArguments(type.getTypeParameters().size());
+				}
+			}
+			return true;
+		}
+
+		for (BiFunction<ExtendedElement, String, Object> mapping : context.getFunctionalTypeMappings()) {
+			Object mapped = mapping.apply(enclosingElement, typeFullName);
+			if (mapped instanceof String) {
+				print((String) mapped);
+				return true;
+			} else if (mapped instanceof JCTree) {
+				getPrinter().substituteAndPrintType((JCTree) mapped);
+				return true;
+			} else if (mapped instanceof TypeMirror) {
+				print(getMappedType((TypeMirror) mapped));
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	@Override
@@ -1316,10 +1384,13 @@ public class Java2TypeScriptAdapter extends PrinterAdapter {
 			// automatic static field access target redirection
 			if (!"class".equals(variableAccess.getVariableName())
 					&& variableAccess.getVariable().getModifiers().contains(Modifier.STATIC)) {
-				if (isMappedType(targetType.toString())
-						&& !context.getLangTypeMappings().containsKey(targetType.toString())) {
-					print(getTypeMappingTarget(targetType.toString()) + ".").print(variableAccess.getVariableName());
-					return true;
+
+				if (!context.getLangTypeMappings().containsKey(targetType.toString())) {
+					if (substituteAndPrintType(variableAccess, (TypeElement) targetType)) {
+						print(".");
+						print(variableAccess.getVariableName());
+						return true;
+					}
 				}
 			}
 

@@ -22,6 +22,8 @@ public class NativeStringBuilder {
 
 		trace.push("" + sb);
 
+		trace.push(sb.lastIndexOf("c") + "");
+
 		StringBuffer sb2 = new StringBuffer();
 
 		sb2.append("a");
@@ -65,7 +67,10 @@ public class NativeStringBuilder {
 
 		result.insert(1, "aaaa");
 		trace.push(result.toString());
-		
+
+		trace.push(result.substring(3));
+		trace.push(result.substring(3, 7));
+
 		$export("trace", trace.join(","));
 
 	}
